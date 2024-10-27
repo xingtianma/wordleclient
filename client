@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+
+import socket
+import json
+import urllib.request
+import random
+
+def wordList():
+    url = "https://4730.network/projects/project1-words.txt"
+    response = urllib.request.urlopen(url)
+    words = response.read().decode().split()
+    word_list = set(words)
+    return word_list
+
+def load_words(filename="words.txt"):
+    with open(filename, 'r') as f:
+        return set(word.strip().lower() for word in f if len(word.strip()) == 5)
+    
+def getFullJSON(client_socket):
+    resp = ""
+    while True:
+        chunk = client_socket.recv(1024).decode()
+        resp += chunk
+        if "\n" in chunk:  # Break if newline is detected, indicating end of response
+            break
+    return resp
+
+def saletGuess(id):
+    return {
+        "type": "guess", 
+        "id": id, 
+        "word": "salet"
+        }
+
+def guessWord(id, word):
+    return {
+        "type": "guess",
+        "id": id,
+        "word": word
+        }
+
+def client_program():
+    host = "proj1.4700.network"
+    port = 27993
+    words = wordList()
+
+    client_socket = socket.socket()
+    client_socket.connect((host, port))
+    client_socket.send('{"type": "hello", "northeastern_username": "ma.xing"}\n'.encode())
+    idJSON = json.loads(getFullJSON(client_socket))
+    id = idJSON.get("id")
+    
+    client_socket.send(json.dumps(saletGuess(id)).encode() + "\n".encode())
+
+    responseJSON = json.loads(getFullJSON(client_socket))
+    correctWordArray = [None] * 5
+    possibleWordArray = []
+    
+    currGuess = responseJSON.get("guesses")[-1]
+    currWord = list(currGuess.get("word"))
+    currMarks = currGuess.get("marks")
+
+    for i in range(5):
+        if currMarks[i] == 2:
+            correctWordArray[i] = currWord[i]
+
+    for i in range(5):
+        if currMarks[i] == 1:
+            if i != correctWordArray.__len__() - 1:
+                correctWordArray[i + 1] = currWord[i]
+            else:
+                correctWordArray
+
+    for element in words: 
+        print(element)
+    
+    print(len(words))
+    
+    client_socket.send(json.dumps(guessWord(id, "WORDS")).encode() + "\n".encode())
+    responseJSON = json.loads(getFullJSON(client_socket))
+    print("RECEIVED RESPONSE", responseJSON)
+        
+    client_socket.close()
+
+if __name__ == '__main__':
+    client_program()
