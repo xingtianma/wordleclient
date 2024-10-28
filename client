@@ -80,7 +80,7 @@ def client_program():
     #if conditions for using TLS socket or not
     first_socket = socket.socket()
 
-    if args.s:
+    if args.s or port == 27994:
         context = ssl.create_default_context()
         client_socket = context.wrap_socket(first_socket, server_hostname=host)
     else:
