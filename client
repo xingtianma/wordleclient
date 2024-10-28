@@ -4,7 +4,10 @@ import socket
 import json
 import urllib.request
 import random
+import argparse
+import ssl
 
+#import the word list from the project website
 def wordList():
     url = "https://4730.network/projects/project1-words.txt"
     response = urllib.request.urlopen(url)
@@ -12,10 +15,12 @@ def wordList():
     word_list = set(words)
     return word_list
 
+#load the words into an array
 def load_words(filename="words.txt"):
     with open(filename, 'r') as f:
         return set(word.strip().lower() for word in f if len(word.strip()) == 5)
     
+#get the full return json, by waiting until \n
 def getFullJSON(client_socket):
     resp = ""
     while True:
@@ -25,6 +30,7 @@ def getFullJSON(client_socket):
             break
     return resp
 
+#first guess for the wordle
 def saletGuess(id):
     return {
         "type": "guess", 
@@ -32,6 +38,7 @@ def saletGuess(id):
         "word": "salet"
         }
 
+#function to guess a specific word
 def guessWord(id, word):
     return {
         "type": "guess",
@@ -39,48 +46,127 @@ def guessWord(id, word):
         "word": word
         }
 
-def client_program():
-    host = "proj1.4700.network"
-    port = 27993
-    words = wordList()
+#function to send the json for username
+def sendUsername(username):
+    return {
+        "type": "hello",
+        "northeastern_username": username
+    }
 
-    client_socket = socket.socket()
+#client function
+def client_program():
+    #creates the arguments and set the optional ones
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-p', type=int)
+    parser.add_argument('-s', action="store_true")
+    parser.add_argument('hostname')
+    parser.add_argument('northeastern_username')
+
+    args = parser.parse_args()
+    #sets the username from the args
+    username = sendUsername(args.northeastern_username)
+    host = args.hostname
+    
+    #if conditions for if it is using TLS port or not
+    if args.p:
+        port = args.p
+    elif args.s:
+        port = 27994
+    else:
+        port = 27993
+
+    words = wordList()
+    
+    #if conditions for using TLS socket or not
+    first_socket = socket.socket()
+
+    if args.s:
+        context = ssl.create_default_context()
+        client_socket = context.wrap_socket(first_socket, server_hostname=host)
+    else:
+        client_socket = first_socket
+
+    #connects the the host using the given port
     client_socket.connect((host, port))
-    client_socket.send('{"type": "hello", "northeastern_username": "ma.xing"}\n'.encode())
+    client_socket.send(json.dumps(username).encode() + "\n".encode())
+
+    #gets the host
     idJSON = json.loads(getFullJSON(client_socket))
     id = idJSON.get("id")
     
+    #sends the first word
     client_socket.send(json.dumps(saletGuess(id)).encode() + "\n".encode())
-
     responseJSON = json.loads(getFullJSON(client_socket))
-    correctWordArray = [None] * 5
-    possibleWordArray = []
-    
+
+    #sets the fields so it grabs the current guess word and the marks for it
     currGuess = responseJSON.get("guesses")[-1]
     currWord = list(currGuess.get("word"))
     currMarks = currGuess.get("marks")
 
+    #sets the arrays with none so it can accurately compare the letter placements side by side
+    currTwoLetters = [None] * 5
+    currOneLetters = [None] * 5
+    #not needed since just checking if it contains or not
+    currZeroLetters = []
+    possibleWords = []
+
+    #sets the arrays for the '2','1' and '0' letters
     for i in range(5):
         if currMarks[i] == 2:
-            correctWordArray[i] = currWord[i]
+            currTwoLetters[i] = currWord[i]
+        elif currMarks[i] == 1:
+            currOneLetters[i] == currWord[i]
+        elif currMarks[i] == 0:
+            currZeroLetters.append(currWord[i])
 
-    for i in range(5):
-        if currMarks[i] == 1:
-            if i != correctWordArray.__len__() - 1:
-                correctWordArray[i + 1] = currWord[i]
-            else:
-                correctWordArray
+    #filters the original word list so it has the '2' letters in the right position, contains
+    #'1' letters but in different positions and don't contain '0' letters
+    for word in words:
+        wordArr = list(word)
+        for i in range(5):
+            if currTwoLetters[i] != wordArr[i] and currTwoLetters[i] != None:
+                break
+        for i in range(5):
+            if currOneLetters[i] == wordArr[i] and currOneLetters[i] != None:
+                break
+            elif currOneLetters[i] not in wordArr:
+                break
+        for i in range(currZeroLetters.__len__()):
+            if currZeroLetters[i] in wordArr:
+                break
+        else: 
+            possibleWords.append(word)
 
-    for element in words: 
-        print(element)
-    
-    print(len(words))
-    
-    client_socket.send(json.dumps(guessWord(id, "WORDS")).encode() + "\n".encode())
+    #guesses the first word in the list from the new filtered list
+    client_socket.send(json.dumps(guessWord(id, possibleWords[0])).encode() + "\n".encode())
     responseJSON = json.loads(getFullJSON(client_socket))
-    print("RECEIVED RESPONSE", responseJSON)
-        
+    guess = 1
+
+    #while loop that filters through the list and removes any words that don't contain the ;2; 
+    while(responseJSON.get("type") != "bye"):
+        currGuess = responseJSON.get("guesses")[-1]
+        currWord = list(currGuess.get("word"))
+        currMarks = currGuess.get("marks")
+
+        for i in range(5):
+            if currMarks[i] == 2:
+                currTwoLetters[i] = currWord[i]
+
+        for word in possibleWords:
+            wordArr = list(word)
+            for i in range(5):
+                if currTwoLetters[i] != wordArr[i] and currTwoLetters[i] != None:
+                    possibleWords.remove(word)
+                    break
+                
+        client_socket.send(json.dumps(guessWord(id, random.choice(possibleWords))).encode() + "\n".encode())
+        guess = guess + 1
+        responseJSON = json.loads(getFullJSON(client_socket))
+
+    #prints the secret flag and closes the server
+    print(responseJSON.get("flag"))
     client_socket.close()
 
 if __name__ == '__main__':
     client_program()
+    print()
